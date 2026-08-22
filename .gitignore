@@ -1,0 +1,30 @@
+# Virtual Environments
+.venv/
+venv/
+ENV/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Node.js
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# Storage & Temporary Files
+backend/storage/uploads/*
+backend/storage/exports/*
+backend/storage/previews/*
+!backend/storage/uploads/.gitkeep
+!backend/storage/exports/.gitkeep
+!backend/storage/previews/.gitkeep
+
+# OS
+.DS_Store
+Thumbs.db
+*.log
+.env
