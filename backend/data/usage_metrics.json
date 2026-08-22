@@ -1,0 +1,15 @@
+{
+  "total_uploads": 0,
+  "total_generations": 1,
+  "total_photos_processed": 4,
+  "total_sheets_compiled": 1,
+  "recent_activity": [
+    {
+      "timestamp": "2026-08-22T16:44:58.457476Z",
+      "action": "generate",
+      "photos_count": 4,
+      "sheets_count": 1,
+      "prompt": "Royal Palace 10 sheets"
+    }
+  ]
+}

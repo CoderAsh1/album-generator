@@ -69,6 +69,18 @@ async def health_check():
 async def get_themes():
     return {"themes": THEMES}
 
+from services.remote_guard import remote_guard
+
+@app.get("/api/app-status")
+async def get_app_status():
+    enabled, msg = await remote_guard.is_app_enabled()
+    return {"enabled": enabled, "message": msg}
+
+@app.get("/api/admin/metrics")
+async def get_metrics():
+    """Zero-DB usage analytics: total uploads, generations, photos processed, and timestamps."""
+    return remote_guard.get_metrics()
+
 @app.post("/api/upload")
 async def upload_photos(
     files: List[UploadFile] = File(...),
@@ -76,9 +88,12 @@ async def upload_photos(
     relative_paths: Optional[List[str]] = Form(None)
 ):
     """
-    Accepts user photo uploads. Clears out all old/demo session data automatically
-    so that only the user's uploaded folders and photos are in the album.
+    Handles batch upload of photos organized by event folder names.
     """
+    is_enabled, kill_msg = await remote_guard.is_app_enabled()
+    if not is_enabled:
+        raise HTTPException(status_code=503, detail=kill_msg)
+
     # Clear previous state on new upload
     SESSION_STATE["photos_by_event"] = {}
     SESSION_STATE["spreads"] = []
@@ -93,7 +108,7 @@ async def upload_photos(
             event_folder = parts[0]
             clean_filename = parts[-1]
         else:
-            event_folder = (folder_names[idx] if folder_names and idx < len(folder_names) else "001 - Wedding")
+            event_folder = folder_names[idx] if (folder_names and idx < len(folder_names)) else "001 - Wedding"
             clean_filename = file.filename
             
         event_dir = UPLOADS_DIR / event_folder
@@ -119,30 +134,65 @@ async def upload_photos(
         SESSION_STATE["photos_by_event"][event_folder].append(photo_item)
         uploaded_items.append(photo_item)
         
+    total_uploaded = len(uploaded_items)
+    remote_guard.record_usage(action="upload", photos_count=total_uploaded)
+    
     return {
-        "message": f"Successfully uploaded {len(uploaded_items)} photos",
+        "message": f"Successfully uploaded {total_uploaded} photos",
         "events": list(SESSION_STATE["photos_by_event"].keys()),
         "total_photos": sum(len(v) for v in SESSION_STATE["photos_by_event"].values())
     }
 
+class GenerateAlbumRequest(BaseModel):
+    theme_id: Optional[str] = None
+    prompt: Optional[str] = None
+    images_per_sheet: Optional[int] = None
+    num_sheets: Optional[int] = None
+    color_correction_level: Optional[str] = "medium"
+
 @app.post("/api/generate-album")
-async def generate_album(theme_id: Optional[str] = None):
+async def generate_album(
+    req: Optional[GenerateAlbumRequest] = None,
+    theme_id: Optional[str] = None
+):
     """
-    AI Model Decision: Analyzes uploaded photos & events, determines optimal layouts,
-    applies theme & poetry, and renders 10800x3600 @ 300 DPI spreads.
+    AI Model Decision: Analyzes uploaded photos & events, respects optional user prompt/overrides,
+    and renders 10800x3600 @ 300 DPI spreads.
     """
+    is_enabled, kill_msg = await remote_guard.is_app_enabled()
+    if not is_enabled:
+        raise HTTPException(status_code=503, detail=kill_msg)
+
     if not SESSION_STATE["photos_by_event"]:
         raise HTTPException(status_code=400, detail="No photos uploaded yet. Please upload event folders first.")
         
+    actual_theme = (req.theme_id if req else None) or theme_id
+    prompt = req.prompt if req else None
+    images_per_sheet = req.images_per_sheet if req else None
+    num_sheets = req.num_sheets if req else None
+    color_level = (req.color_correction_level if req else "medium") or "medium"
+    
     spreads = spread_engine.create_spreads_from_events(
         event_photos_map=SESSION_STATE["photos_by_event"],
-        theme_id=theme_id
+        theme_id=actual_theme,
+        custom_prompt=prompt,
+        images_per_sheet=images_per_sheet,
+        num_sheets=num_sheets,
+        color_correction_level=color_level
     )
     
     for spread in spreads:
         spread_renderer.render_spread(spread, save_preview=True)
         
     SESSION_STATE["spreads"] = spreads
+    
+    total_photos = sum(len(v) for v in SESSION_STATE["photos_by_event"].values())
+    remote_guard.record_usage(
+        action="generate",
+        photos_count=total_photos,
+        sheets_count=len(spreads),
+        prompt=prompt
+    )
     
     return {
         "message": f"AI composed {len(spreads)} spreads (10800x3600 @ 300 DPI)",
@@ -195,6 +245,40 @@ async def download_pdf(filename: str):
         path=str(file_path),
         filename=filename,
         media_type="application/pdf"
+    )
+
+@app.post("/api/export-psd")
+async def export_psd(album_title: str = "Royal Wedding Photobook"):
+    """
+    Compiles all generated spreads (10800x3600 @ 300 DPI) into editable layered Photoshop PSDs.
+    """
+    if not SESSION_STATE["spreads"]:
+        raise HTTPException(status_code=400, detail="No spreads to export.")
+        
+    from services.psd_generator import psd_generator
+    zip_path, zip_filename = psd_generator.export_all_psds_as_zip(
+        SESSION_STATE["spreads"],
+        album_title=album_title
+    )
+    
+    return {
+        "message": "300 DPI Layered Photoshop PSDs Generated Successfully",
+        "zip_filename": zip_filename,
+        "download_url": f"/api/download-psd/{zip_filename}",
+        "total_psds": len(SESSION_STATE["spreads"]),
+        "dimensions": "36\" x 12\" @ 300 DPI (10800 x 3600 px)"
+    }
+
+@app.get("/api/download-psd/{filename}")
+async def download_psd(filename: str):
+    file_path = EXPORTS_DIR / filename
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="PSD Archive not found")
+        
+    return FileResponse(
+        path=str(file_path),
+        filename=filename,
+        media_type="application/zip"
     )
 
 @app.post("/api/sample-demo")

@@ -74,14 +74,23 @@ class KieClient:
                 response = await client.post(url, json=payload, headers=self.headers)
                 if response.status_code == 200:
                     data = response.json()
-                    logger.info(f"KIE createTask response: {data}")
-                    task_id = data.get("taskId") or (data.get("data") or {}).get("taskId")
+                    # Check for API-level business errors (e.g. credit expiration, quota exceeded)
+                    if data.get("code") not in [200, 0, None]:
+                        err_msg = data.get("msg") or data.get("message") or "Unknown error"
+                        logger.warning(f"KIE.ai API notice (code={data.get('code')}): {err_msg}. Gracefully using local high-res pipeline.")
+                        return None
+                    
+                    task_id = (data.get("data") or {}).get("taskId") or data.get("taskId")
+                    logger.info(f"KIE createTask success: taskId={task_id}")
                     return task_id
+                elif response.status_code in [401, 402, 403]:
+                    logger.warning(f"KIE.ai Authentication/Credits notice ({response.status_code}): {response.text}. Gracefully using local high-res pipeline.")
+                    return None
                 else:
-                    logger.error(f"KIE createTask failed ({response.status_code}): {response.text}")
+                    logger.warning(f"KIE createTask status {response.status_code}: {response.text}. Gracefully using local high-res pipeline.")
                     return None
         except Exception as e:
-            logger.error(f"KIE createTask exception: {e}")
+            logger.warning(f"KIE createTask connection issue: {e}. Gracefully using local high-res pipeline.")
             return None
 
     async def poll_task_result(

@@ -15,13 +15,14 @@ from services.asset_manager import (
 
 def apply_soft_horizontal_feather(img: Image.Image, feather_width: int = 2200, direction: str = "left") -> Image.Image:
     """
-    Applies a smooth cosine alpha feather gradient to seamlessly blend photos into the background.
+    Applies a smooth cosine alpha feather gradient to blend photos into the ivory background.
+    Supports left, right, and dual (both) edge feathering.
     """
     img = img.convert("RGBA")
     w, h = img.size
     
     mask = np.ones((h, w), dtype=np.float32) * 255.0
-    f_w = min(feather_width, w)
+    f_w = min(feather_width, w // 2 if direction == "both" else w)
     
     if direction == "left":
         gradient = np.linspace(0, 1, f_w)
@@ -31,10 +32,20 @@ def apply_soft_horizontal_feather(img: Image.Image, feather_width: int = 2200, d
         gradient = np.linspace(1, 0, f_w)
         smooth_gradient = 0.5 * (1.0 - np.cos(np.pi * gradient)) * 255.0
         mask[:, w - f_w:] = smooth_gradient
+    elif direction == "both" or direction == "soft_horizontal_both":
+        grad_l = np.linspace(0, 1, f_w)
+        smooth_l = 0.5 * (1.0 - np.cos(np.pi * grad_l)) * 255.0
+        mask[:, :f_w] = smooth_l
+        
+        grad_r = np.linspace(1, 0, f_w)
+        smooth_r = 0.5 * (1.0 - np.cos(np.pi * grad_r)) * 255.0
+        mask[:, w - f_w:] = smooth_r
         
     mask_img = Image.fromarray(mask.astype(np.uint8), mode="L")
     img.putalpha(mask_img)
     return img
+
+from services.photo_enhancer import photo_enhancer
 
 def create_framed_photo_with_shadow(
     photo_path: str,
@@ -44,22 +55,24 @@ def create_framed_photo_with_shadow(
     border_color: Tuple[int, int, int] = (255, 255, 255),
     shadow_offset: Tuple[int, int] = (20, 28),
     shadow_blur: int = 40,
-    shadow_opacity: int = 90
+    shadow_opacity: int = 90,
+    color_level: str = "medium"
 ) -> Tuple[Image.Image, Tuple[int, int]]:
     """
-    Crops and renders a clean white-bordered portrait with realistic multi-layer drop shadow.
+    Crops and renders a clean white-bordered portrait with studio-grade enhancement & realistic drop shadow.
     """
     try:
         raw_img = Image.open(photo_path)
     except Exception:
         raw_img = Image.new("RGB", (target_w, target_h), (220, 220, 220))
         
-    raw_img = ImageOps.exif_transpose(raw_img)
+    # Apply studio-grade color balancing with user-selected level
+    enhanced_img = photo_enhancer.enhance_photo(raw_img, level=color_level)
     
     inner_w = max(10, target_w - border_width * 2)
     inner_h = max(10, target_h - border_width * 2)
     
-    cropped = ImageOps.fit(raw_img, (inner_w, inner_h), method=Image.Resampling.LANCZOS)
+    cropped = ImageOps.fit(enhanced_img, (inner_w, inner_h), method=Image.Resampling.LANCZOS)
     
     framed = Image.new("RGBA", (target_w, target_h), border_color + (255,))
     framed.paste(cropped, (border_width, border_width))
@@ -118,11 +131,9 @@ def draw_text_with_halo(
 class SpreadRenderer:
     def render_spread(self, spread: SpreadDesign, save_preview: bool = True) -> Tuple[str, Optional[str]]:
         """
-        Renders spacious, luxury 3-4 photo wedding spreads @ 300 DPI (10800x3600)
-        with dynamic non-repeating poetry and clean photo-first spreads.
+        Renders full 10800x3600 @ 300 DPI spread for all dynamic layout archetypes.
         """
         palette = spread.dynamic_palette or THEMES["royal_blue_gold"]
-        
         bg_color = palette.get("bg_color", (250, 251, 253))
         gold_color = palette.get("gold", (197, 142, 49))
         frame_border = (255, 255, 255)
@@ -131,21 +142,26 @@ class SpreadRenderer:
         # 1. Base Canvas
         canvas = Image.new("RGBA", (SPREAD_WIDTH, SPREAD_HEIGHT), tuple(bg_color) + (255,))
         
-        # 2. Render Background Hero Photo (Right ~65% with soft feather)
-        bg_placements = [p for p in spread.photos if p.role == "background_hero"]
+        color_level = spread.color_correction_level or "medium"
+        
+        # 2. Render Background Unframed Photos
+        bg_placements = [p for p in spread.photos if p.border_width == 0]
         for p in bg_placements:
             if Path(p.file_path).exists():
                 try:
                     src_img = Image.open(p.file_path)
-                    src_img = ImageOps.exif_transpose(src_img)
-                    fitted = ImageOps.fit(src_img, (p.width, p.height), method=Image.Resampling.LANCZOS)
-                    feathered = apply_soft_horizontal_feather(fitted, feather_width=2200, direction="left")
+                    enhanced_bg = photo_enhancer.enhance_photo(src_img, level=color_level)
+                    fitted = ImageOps.fit(enhanced_bg, (p.width, p.height), method=Image.Resampling.LANCZOS)
+                    if p.blend_feather:
+                        feathered = apply_soft_horizontal_feather(fitted, feather_width=2000, direction=p.blend_feather)
+                    else:
+                        feathered = fitted.convert("RGBA")
                     canvas.paste(feathered, (p.x, p.y), feathered)
                 except Exception as e:
                     print(f"Error rendering background photo: {e}")
                     
         # 3. Render Inset Framed Photos
-        framed_placements = [p for p in spread.photos if p.role != "background_hero"]
+        framed_placements = [p for p in spread.photos if p.border_width > 0]
         for p in framed_placements:
             if Path(p.file_path).exists():
                 try:
@@ -157,22 +173,31 @@ class SpreadRenderer:
                         border_color=frame_border,
                         shadow_offset=(20, 28),
                         shadow_blur=38,
-                        shadow_opacity=shadow_opacity
+                        shadow_opacity=shadow_opacity,
+                        color_level=color_level
                     )
                     canvas.paste(framed_img, (p.x + off_x, p.y + off_y), framed_img)
                 except Exception as e:
                     print(f"Error rendering framed photo: {e}")
                     
-        # 4. Render Botanical Floral Flourishes
+        # 4. Render Botanical Floral Flourishes (Corner accents)
         botanical_left = draw_floral_branch(size=(1600, 2000), color=palette.get("filigree_color", (40, 80, 140, 160)), orientation="left")
         canvas.paste(botanical_left, (0, SPREAD_HEIGHT - 2000), botanical_left)
         
-        # 5. Render Typography (Only on Text/Opener Spreads)
+        # 5. Render Dynamic Typography
         if spread.has_header_text:
             text_layer = Image.new("RGBA", (SPREAD_WIDTH, SPREAD_HEIGHT), (0, 0, 0, 0))
             draw_txt = ImageDraw.Draw(text_layer)
             
-            left_zone_lum = calculate_region_luminance(canvas, 400, 250, 3200, 800)
+            # Header position varies by layout archetype
+            if spread.layout_type == "hero_panoramic_left":
+                header_center_x = 8825  # Placed on right ivory margin
+            elif spread.layout_type in ["modern_duet_fine_art", "panoramic_center_split"]:
+                header_center_x = 5400  # Centered on top
+            else:
+                header_center_x = 1975  # Placed on left ivory margin
+                
+            left_zone_lum = calculate_region_luminance(canvas, header_center_x - 1200, 250, 2400, 800)
             if left_zone_lum < 0.45:
                 left_title_col = (255, 255, 255)
                 left_accent_col = (245, 220, 145)
@@ -184,29 +209,26 @@ class SpreadRenderer:
                 left_sec_col = palette.get("text_secondary", (70, 80, 95))
                 left_halo = (255, 255, 255, 180)
                 
-            header_center_x = 1975
-            
             font_script_title = get_font("script", 260)
             font_serif_title = get_font("caps_serif", 105)
             font_poem = get_font("body_serif", 64)
             
             bbox_script = draw_txt.textbbox((0, 0), spread.main_title_script, font=font_script_title)
             script_w = bbox_script[2] - bbox_script[0]
-            
             bbox_serif = draw_txt.textbbox((0, 0), spread.main_title_serif, font=font_serif_title)
             serif_w = bbox_serif[2] - bbox_serif[0]
             
             total_title_w = script_w + 35 + serif_w
             start_x = header_center_x - (total_title_w // 2)
             
-            draw_text_with_halo(draw_txt, (start_x, 320), spread.main_title_script, font_script_title, tuple(left_title_col), halo_color=left_halo, halo_radius=3)
-            draw_text_with_halo(draw_txt, (start_x + script_w + 35, 435), spread.main_title_serif, font_serif_title, tuple(left_accent_col), halo_color=left_halo, halo_radius=3)
+            draw_text_with_halo(draw_txt, (start_x, 300), spread.main_title_script, font_script_title, tuple(left_title_col), halo_color=left_halo, halo_radius=3)
+            draw_text_with_halo(draw_txt, (start_x + script_w + 35, 415), spread.main_title_serif, font_serif_title, tuple(left_accent_col), halo_color=left_halo, halo_radius=3)
             
             small_flourish = draw_floral_branch(size=(220, 220), color=left_accent_col, orientation="right")
-            text_layer.paste(small_flourish, (start_x + total_title_w + 20, 360), small_flourish)
+            text_layer.paste(small_flourish, (start_x + total_title_w + 20, 340), small_flourish)
             
             lines = spread.subtitle.split("\n")
-            y_text = 630
+            y_text = 610
             for line in lines:
                 draw_text_with_halo(draw_txt, (header_center_x, y_text), line, font_poem, tuple(left_sec_col), halo_color=left_halo, halo_radius=2, anchor="mm")
                 y_text += 82
@@ -214,8 +236,8 @@ class SpreadRenderer:
             left_divider = draw_divider_ornament(width=700, height=50, color=gold_color)
             text_layer.paste(left_divider, (header_center_x - 350, y_text + 10), left_divider)
             
-            # Center Spine Crest ($x = 5400$)
-            if spread.has_spine_crest:
+            # Center Spine Crest (Only when appropriate and center is not obstructed)
+            if spread.has_spine_crest and spread.layout_type != "panoramic_center_split":
                 center_x = 5400
                 crest = draw_diamond_crest(size=(220, 220), color=left_accent_col)
                 text_layer.paste(crest, (center_x - 110, 480), crest)

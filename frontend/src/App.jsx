@@ -9,7 +9,8 @@ import {
   Layers, 
   ArrowRight,
   RefreshCw,
-  AlertCircle
+  AlertCircle,
+  Wand2
 } from 'lucide-react'
 
 export default function App() {
@@ -20,6 +21,9 @@ export default function App() {
   const [pdfFilename, setPdfFilename] = useState('')
   const [spreadPreviews, setSpreadPreviews] = useState([])
   const [errorMessage, setErrorMessage] = useState('')
+
+  // Single AI Prompt input - everything can be specified in natural language or left empty
+  const [customPrompt, setCustomPrompt] = useState('')
 
   const fileInputRef = useRef(null)
 
@@ -44,17 +48,29 @@ export default function App() {
         method: 'POST',
         body: formData,
       })
-      if (!uploadRes.ok) throw new Error('Failed to upload photos')
+      if (!uploadRes.ok) {
+        const errData = await uploadRes.json().catch(() => ({}))
+        throw new Error(errData.detail || 'Failed to upload photos')
+      }
       const uploadData = await uploadRes.json()
 
-      // Step 2: Process spreads (10800x3600 @ 300 DPI)
+      // Step 2: Process spreads (10800x3600 @ 300 DPI) with prompt
       setStage('processing')
       setProgressText('Composing 10,800 × 3,600 px @ 300 DPI panoramic spreads...')
       
-      const genRes = await fetch('/api/generate-album?theme_id=royal_blue_gold', {
+      const payload = {
+        prompt: customPrompt.trim() ? customPrompt.trim() : null
+      }
+      
+      const genRes = await fetch('/api/generate-album', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
       })
-      if (!genRes.ok) throw new Error('Failed to generate album spreads')
+      if (!genRes.ok) {
+        const errData = await genRes.json().catch(() => ({}))
+        throw new Error(errData.detail || 'Failed to generate album spreads')
+      }
       const genData = await genRes.json()
       
       const spreads = genData.spreads || []
@@ -94,48 +110,6 @@ export default function App() {
     }
   }
 
-  const handleDemoRun = async () => {
-    setStage('processing')
-    setErrorMessage('')
-    setProgressText('Loading demo wedding events (001 - Haldi, 002 - Wedding)...')
-
-    try {
-      const demoRes = await fetch('/api/sample-demo', { method: 'POST' })
-      if (!demoRes.ok) throw new Error('Failed to load demo')
-      const demoData = await demoRes.json()
-
-      const spreads = demoData.spreads || []
-      setSpreadCount(spreads.length)
-      setSpreadPreviews(spreads.map(s => s.preview_url).filter(Boolean))
-
-      setStage('generating_pdf')
-      setProgressText('Compiling 10,800 × 3,600 px spreads into 300 DPI PDF...')
-
-      const pdfRes = await fetch('/api/export-pdf', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
-      })
-      if (!pdfRes.ok) throw new Error('Failed to export PDF')
-      const pdfData = await pdfRes.json()
-
-      setStage('completed')
-      setProgressText('PDF ready! Automatic download triggered.')
-      setPdfDownloadUrl(pdfData.download_url)
-      setPdfFilename(pdfData.pdf_filename)
-
-      const downloadLink = document.createElement('a')
-      downloadLink.href = pdfData.download_url
-      downloadLink.download = pdfData.pdf_filename || 'wedding_album_300dpi.pdf'
-      document.body.appendChild(downloadLink)
-      downloadLink.click()
-      document.body.removeChild(downloadLink)
-    } catch (err) {
-      console.error(err)
-      setStage('error')
-      setErrorMessage(err.message || 'Demo generation failed')
-    }
-  }
-
   const handleReset = () => {
     setStage('idle')
     setProgressText('')
@@ -153,8 +127,8 @@ export default function App() {
 
       <div className="w-full max-w-2xl z-10">
         {/* Brand Header */}
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-br from-gold-400 via-gold-500 to-gold-700 shadow-xl shadow-gold-900/30 mb-4">
+        <div className="text-center mb-6">
+          <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-br from-gold-400 via-gold-500 to-gold-700 shadow-xl shadow-gold-900/30 mb-3">
             <BookOpen className="w-7 h-7 text-slate-950 stroke-[2.2]" />
           </div>
           <h1 className="text-2xl md:text-3xl font-serif font-bold tracking-wide gold-gradient-text">
@@ -166,7 +140,7 @@ export default function App() {
         </div>
 
         {/* Main Card */}
-        <div className="glass-panel rounded-2xl p-8 shadow-2xl border border-slate-800/80 backdrop-blur-xl relative overflow-hidden">
+        <div className="glass-panel rounded-2xl p-6 md:p-8 shadow-2xl border border-slate-800/80 backdrop-blur-xl relative overflow-hidden">
           
           {/* Hidden File Input */}
           <input
@@ -181,13 +155,34 @@ export default function App() {
 
           {stage === 'idle' && (
             <div className="flex flex-col items-center text-center">
+              
+              {/* AI Prompt Window */}
+              <div className="w-full mb-5 text-left bg-slate-900/60 rounded-xl p-4 border border-slate-800">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-semibold text-gold-400 flex items-center gap-1.5">
+                    <Wand2 className="w-3.5 h-3.5" />
+                    AI Model Prompt (Optional)
+                  </span>
+                  <span className="text-[10px] text-slate-500 font-mono">Leave empty for auto mode</span>
+                </div>
+
+                {/* Prompt Text Input */}
+                <textarea
+                  value={customPrompt}
+                  onChange={(e) => setCustomPrompt(e.target.value)}
+                  placeholder="Enter exact instructions (e.g. '10 sheets, 3 images per sheet, warm vibrant color pop, royal palace backdrop, minimal poetry'). Leave blank for automatic AI design."
+                  rows={3}
+                  className="w-full bg-slate-950/90 border border-slate-800 rounded-lg p-3 text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:border-gold-500/60 transition resize-none leading-relaxed"
+                />
+              </div>
+
               {/* Big Upload Area */}
               <div 
                 onClick={() => fileInputRef.current?.click()}
-                className="w-full border-2 border-dashed border-gold-500/40 hover:border-gold-400 hover:bg-gold-500/5 transition-all duration-200 rounded-2xl p-10 cursor-pointer flex flex-col items-center justify-center group"
+                className="w-full border-2 border-dashed border-gold-500/40 hover:border-gold-400 hover:bg-gold-500/5 transition-all duration-200 rounded-2xl p-8 cursor-pointer flex flex-col items-center justify-center group"
               >
-                <div className="w-16 h-16 rounded-full bg-slate-900/90 border border-gold-500/30 flex items-center justify-center mb-4 group-hover:scale-110 transition duration-200 shadow-lg shadow-black/40">
-                  <FolderUp className="w-8 h-8 text-gold-400" />
+                <div className="w-14 h-14 rounded-full bg-slate-900/90 border border-gold-500/30 flex items-center justify-center mb-3 group-hover:scale-110 transition duration-200 shadow-lg shadow-black/40">
+                  <FolderUp className="w-7 h-7 text-gold-400" />
                 </div>
                 
                 <h3 className="text-base font-semibold text-slate-100 mb-1">
@@ -203,17 +198,6 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Quick Demo Option */}
-              <div className="mt-6 flex items-center gap-2 text-xs text-slate-500">
-                <span>Or test immediately:</span>
-                <button
-                  onClick={handleDemoRun}
-                  className="text-gold-400 hover:text-gold-300 font-medium underline underline-offset-4 flex items-center gap-1 transition"
-                >
-                  <Sparkles className="w-3.5 h-3.5" />
-                  <span>Run Demo (Haldi + Wedding)</span>
-                </button>
-              </div>
             </div>
           )}
 
@@ -276,7 +260,7 @@ export default function App() {
                     className="px-6 py-3 rounded-xl bg-gradient-to-r from-gold-500 to-gold-600 hover:from-gold-400 hover:to-gold-500 text-slate-950 text-xs font-bold transition shadow-lg shadow-gold-600/30 flex items-center gap-2"
                   >
                     <FileDown className="w-4 h-4" />
-                    <span>Download PDF Again</span>
+                    <span>Download PDF (300 DPI)</span>
                   </a>
                 )}
                 <button

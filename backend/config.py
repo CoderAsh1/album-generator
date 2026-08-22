@@ -11,9 +11,18 @@ PREVIEWS_DIR = STORAGE_DIR / "previews"
 ASSETS_DIR = BASE_DIR / "assets"
 FONTS_DIR = ASSETS_DIR / "fonts"
 
+DATA_DIR = BASE_DIR / "data"
+
 # Ensure directories exist
-for p in [STORAGE_DIR, UPLOADS_DIR, EXPORTS_DIR, PREVIEWS_DIR, ASSETS_DIR, FONTS_DIR]:
+for p in [STORAGE_DIR, UPLOADS_DIR, EXPORTS_DIR, PREVIEWS_DIR, ASSETS_DIR, FONTS_DIR, DATA_DIR]:
     p.mkdir(parents=True, exist_ok=True)
+
+# ==============================================================================
+# APP KILL SWITCH / ACCESS CONTROL
+# Set IS_APP_ENABLED = False to immediately block all uploads and generations.
+# ==============================================================================
+IS_APP_ENABLED = True
+KILL_SWITCH_MESSAGE = "Service is temporarily disabled by administrator."
 
 # Album Print Dimensions (36 inches x 12 inches @ 300 DPI)
 SPREAD_WIDTH = 10800
