@@ -42,26 +42,61 @@ def _to_rgba(color, default_alpha=200):
         return (color[0], color[1], color[2], default_alpha)
     return (50, 50, 50, default_alpha)
 
+def draw_diamond_crest(size=(260, 260), color=(49, 93, 153, 220)) -> Image.Image:
+    rgba = _to_rgba(color, 220)
+    w, h = size
+    img = Image.new("RGBA", size, (0, 0, 0, 0))
+    draw = ImageDraw.Draw(img)
+    cx, cy = w // 2, h // 2
+    r = min(w, h) * 0.38
+    
+    p1 = (cx, cy - r)
+    p2 = (cx + r, cy)
+    p3 = (cx, cy + r)
+    p4 = (cx - r, cy)
+    draw.polygon([p1, p2, p3, p4], outline=rgba, width=5)
+    
+    r_in = r * 0.65
+    q1 = (cx, cy - r_in)
+    q2 = (cx + r_in, cy)
+    q3 = (cx, cy + r_in)
+    q4 = (cx - r_in, cy)
+    draw.polygon([q1, q2, q3, q4], outline=rgba, width=3)
+    
+    draw.ellipse([cx-5, cy-5, cx+5, cy+5], fill=rgba)
+    draw.line([(cx, cy - r), (cx, cy - r - 25)], fill=rgba, width=4)
+    draw.line([(cx, cy + r), (cx, cy + r + 25)], fill=rgba, width=4)
+    
+    return img
+
+def draw_divider_ornament(width=900, height=80, color=(49, 93, 153, 180)) -> Image.Image:
+    rgba = _to_rgba(color, 180)
+    img = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(img)
+    cy = height // 2
+    cx = width // 2
+    
+    draw.polygon([(cx, cy - 8), (cx + 8, cy), (cx, cy + 8), (cx - 8, cy)], fill=rgba)
+    draw.ellipse([cx - 28, cy - 5, cx - 18, cy + 5], outline=rgba, width=2)
+    draw.ellipse([cx + 18, cy - 5, cx + 28, cy + 5], outline=rgba, width=2)
+    draw.line([(cx - 45, cy), (int(width * 0.15), cy)], fill=rgba, width=2)
+    draw.line([(cx + 45, cy), (int(width * 0.85), cy)], fill=rgba, width=2)
+    
+    return img
+
 def draw_royal_album_divider(width=1600, height=80, color=(100, 100, 100, 200)) -> Image.Image:
-    """
-    Draws the exact Indian album top/bottom filigree divider (matching reference image):
-    Horizontal line with center scrollwork / diamond crest.
-    """
     rgba = _to_rgba(color, 190)
     img = Image.new("RGBA", (width, height), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
     cx, cy = width // 2, height // 2
     
-    # Left and right thin lines
     draw.line([(int(width * 0.1), cy), (cx - 90, cy)], fill=rgba, width=3)
     draw.line([(cx + 90, cy), (int(width * 0.9), cy)], fill=rgba, width=3)
     
-    # Center ornate scroll motif
     draw.ellipse([cx - 40, cy - 14, cx + 40, cy + 14], outline=rgba, width=3)
     draw.ellipse([cx - 18, cy - 8, cx + 18, cy + 8], outline=rgba, width=2)
     draw.ellipse([cx - 5, cy - 5, cx + 5, cy + 5], fill=rgba)
     
-    # Side scroll curls
     draw.arc([cx - 80, cy - 15, cx - 40, cy + 15], start=90, end=270, fill=rgba, width=3)
     draw.arc([cx + 40, cy - 15, cx + 80, cy + 15], start=270, end=90, fill=rgba, width=3)
     

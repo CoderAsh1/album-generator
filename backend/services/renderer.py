@@ -10,12 +10,12 @@ from config import (
 )
 from services.spread_engine import SpreadDesign, SpreadPhotoPlacement
 from services.asset_manager import (
-    get_font, draw_royal_album_divider
+    get_font, draw_floral_branch, draw_diamond_crest, draw_divider_ornament
 )
 
-def apply_soft_horizontal_feather(img: Image.Image, feather_width: int = 1600, direction: str = "left") -> Image.Image:
+def apply_soft_horizontal_feather(img: Image.Image, feather_width: int = 2200, direction: str = "left") -> Image.Image:
     """
-    Applies smooth alpha feather gradient to blend background photo into adjacent color blocks.
+    Applies a smooth cosine alpha feather gradient to seamlessly blend photos into the background.
     """
     img = img.convert("RGBA")
     w, h = img.size
@@ -40,98 +40,111 @@ def create_framed_photo_with_shadow(
     photo_path: str,
     target_w: int,
     target_h: int,
-    border_width: int = 30,
+    border_width: int = 32,
     border_color: Tuple[int, int, int] = (255, 255, 255),
-    outer_border_width: int = 0,
-    outer_border_color: Optional[Tuple[int, int, int]] = None,
-    shadow_offset: Tuple[int, int] = (16, 24),
-    shadow_blur: int = 35,
+    shadow_offset: Tuple[int, int] = (20, 28),
+    shadow_blur: int = 40,
     shadow_opacity: int = 90
 ) -> Tuple[Image.Image, Tuple[int, int]]:
     """
-    Renders photo with white border, optional colored outer mat border, and soft drop shadow.
+    Crops and renders a clean white-bordered portrait with realistic multi-layer drop shadow.
     """
     try:
         raw_img = Image.open(photo_path)
     except Exception:
-        raw_img = Image.new("RGB", (target_w, target_h), (230, 230, 230))
+        raw_img = Image.new("RGB", (target_w, target_h), (220, 220, 220))
         
     raw_img = ImageOps.exif_transpose(raw_img)
     
-    total_border = border_width + outer_border_width
-    inner_w = max(10, target_w - total_border * 2)
-    inner_h = max(10, target_h - total_border * 2)
+    inner_w = max(10, target_w - border_width * 2)
+    inner_h = max(10, target_h - border_width * 2)
     
     cropped = ImageOps.fit(raw_img, (inner_w, inner_h), method=Image.Resampling.LANCZOS)
     
-    framed = Image.new("RGBA", (target_w, target_h), (0, 0, 0, 0))
-    draw_f = ImageDraw.Draw(framed)
+    framed = Image.new("RGBA", (target_w, target_h), border_color + (255,))
+    framed.paste(cropped, (border_width, border_width))
     
-    # Outer colored border if specified
-    if outer_border_width > 0 and outer_border_color:
-        draw_f.rectangle([0, 0, target_w, target_h], fill=outer_border_color + (255,))
-        # Inner white border
-        draw_f.rectangle(
-            [outer_border_width, outer_border_width, target_w - outer_border_width, target_h - outer_border_width],
-            fill=border_color + (255,)
-        )
-    else:
-        draw_f.rectangle([0, 0, target_w, target_h], fill=border_color + (255,))
-        
-    # Paste photo
-    framed.paste(cropped, (total_border, total_border))
+    draw = ImageDraw.Draw(framed)
+    draw.rectangle(
+        [border_width - 1, border_width - 1, target_w - border_width + 1, target_h - border_width + 1],
+        outline=(210, 210, 210, 120),
+        width=2
+    )
     
-    # Drop shadow
     pad = shadow_blur * 3
     shadow_w = target_w + pad * 2
     shadow_h = target_h + pad * 2
     
     shadow_img = Image.new("RGBA", (shadow_w, shadow_h), (0, 0, 0, 0))
     shadow_box = Image.new("L", (target_w, target_h), shadow_opacity)
-    shadow_img.paste((15, 20, 30, shadow_opacity), (pad + shadow_offset[0], pad + shadow_offset[1]), shadow_box)
+    
+    shadow_img.paste(
+        (15, 20, 30, shadow_opacity),
+        (pad + shadow_offset[0], pad + shadow_offset[1]),
+        shadow_box
+    )
     shadow_blurred = shadow_img.filter(ImageFilter.GaussianBlur(radius=shadow_blur))
     shadow_blurred.paste(framed, (pad, pad), framed)
     
     return shadow_blurred, (-pad, -pad)
 
+def calculate_region_luminance(canvas: Image.Image, x: int, y: int, w: int, h: int) -> float:
+    box = (max(0, x), max(0, y), min(canvas.width, x + w), min(canvas.height, y + h))
+    crop = canvas.crop(box).convert("RGB")
+    stat = np.array(crop).mean(axis=(0, 1))
+    lum = (0.299 * stat[0] + 0.587 * stat[1] + 0.114 * stat[2]) / 255.0
+    return float(lum)
+
+def draw_text_with_halo(
+    draw: ImageDraw.ImageDraw,
+    pos: Tuple[int, int],
+    text: str,
+    font: ImageFont.FreeTypeFont,
+    fill: Tuple[int, int, int],
+    halo_color: Tuple[int, int, int, int] = (0, 0, 0, 160),
+    halo_radius: int = 4,
+    anchor: Optional[str] = None
+):
+    x, y = pos
+    if halo_radius > 0:
+        for dx in range(-halo_radius, halo_radius + 1, 2):
+            for dy in range(-halo_radius, halo_radius + 1, 2):
+                if dx == 0 and dy == 0:
+                    continue
+                draw.text((x + dx, y + dy), text, font=font, fill=halo_color, anchor=anchor)
+                
+    draw.text((x, y), text, font=font, fill=fill, anchor=anchor)
+
 class SpreadRenderer:
     def render_spread(self, spread: SpreadDesign, save_preview: bool = True) -> Tuple[str, Optional[str]]:
         """
-        Renders 10800x3600 300 DPI Indian Wedding Album Spread matching the exact reference design:
-        - Themed left color band
-        - Center close-up hero portrait
-        - Framed left & right candid moments
-        - Elegant top/bottom filigree divider rules
-        - Lower left slate ribbon text badge
+        Renders spacious, luxury 3-4 photo wedding spreads @ 300 DPI (10800x3600).
         """
-        palette = spread.dynamic_palette or {}
-        accent_color = palette.get("accent", (226, 134, 46)) # Vibrant warm orange/accent
+        palette = spread.dynamic_palette or THEMES["royal_blue_gold"]
         
-        # 1. Base Canvas - Dual Tone Background
-        canvas = Image.new("RGBA", (SPREAD_WIDTH, SPREAD_HEIGHT), (228, 225, 222, 255)) # Right side warm gray
-        draw = ImageDraw.Draw(canvas)
+        bg_color = palette.get("bg_color", (250, 251, 253))
+        gold_color = palette.get("gold", (197, 142, 49))
+        frame_border = (255, 255, 255)
+        shadow_opacity = (palette.get("shadow_color") or [0, 0, 0, 85])[3]
         
-        # Left Side Base Ivory ($x=0$ to $1300$)
-        draw.rectangle([0, 0, 1300, SPREAD_HEIGHT], fill=(240, 237, 233, 255))
+        # 1. Base Canvas
+        canvas = Image.new("RGBA", (SPREAD_WIDTH, SPREAD_HEIGHT), tuple(bg_color) + (255,))
         
-        # Left-Center Warm Themed Color Band ($x=1300$ to $3600$)
-        draw.rectangle([1300, 0, 3600, SPREAD_HEIGHT], fill=accent_color + (255,))
-        
-        # 2. Render Center Hero Background Photo
-        hero_placements = [p for p in spread.photos if p.role == "center_hero_portrait"]
-        for p in hero_placements:
+        # 2. Render Background Hero Photo (Strictly 1 Background Photo)
+        bg_placements = [p for p in spread.photos if p.role == "background_hero"]
+        for p in bg_placements:
             if Path(p.file_path).exists():
                 try:
                     src_img = Image.open(p.file_path)
                     src_img = ImageOps.exif_transpose(src_img)
                     fitted = ImageOps.fit(src_img, (p.width, p.height), method=Image.Resampling.LANCZOS)
-                    feathered = apply_soft_horizontal_feather(fitted, feather_width=1800, direction="left")
+                    feathered = apply_soft_horizontal_feather(fitted, feather_width=2200, direction="left")
                     canvas.paste(feathered, (p.x, p.y), feathered)
                 except Exception as e:
-                    print(f"Error rendering center hero photo: {e}")
+                    print(f"Error rendering background photo: {e}")
                     
-        # 3. Render Inset Framed Photos
-        framed_placements = [p for p in spread.photos if p.role != "center_hero_portrait"]
+        # 3. Render Inset Framed Photos (Strictly 2 Left + Optional 1 Right)
+        framed_placements = [p for p in spread.photos if p.role != "background_hero"]
         for p in framed_placements:
             if Path(p.file_path).exists():
                 try:
@@ -140,46 +153,130 @@ class SpreadRenderer:
                         target_w=p.width,
                         target_h=p.height,
                         border_width=p.border_width,
-                        border_color=p.border_color,
-                        outer_border_width=p.outer_border_width,
-                        outer_border_color=p.outer_border_color or accent_color,
-                        shadow_offset=(18, 24),
-                        shadow_blur=35,
-                        shadow_opacity=85
+                        border_color=frame_border,
+                        shadow_offset=(20, 28),
+                        shadow_blur=38,
+                        shadow_opacity=shadow_opacity
                     )
                     canvas.paste(framed_img, (p.x + off_x, p.y + off_y), framed_img)
                 except Exception as e:
                     print(f"Error rendering framed photo: {e}")
                     
-        # 4. Render Ornamental Top & Bottom Dividers
-        # Left Top Accent Line ($x=1100$ to $2700, y=250$)
-        left_top_div = draw_royal_album_divider(width=1600, height=50, color=(60, 60, 60, 200))
-        canvas.paste(left_top_div, (1100, 250), left_top_div)
+        # 4. Background Scrim & Contrast Analysis
+        right_zone_lum = calculate_region_luminance(canvas, 6000, 1650, 2400, 1200)
+        left_zone_lum = calculate_region_luminance(canvas, 400, 250, 3200, 800)
         
-        # Right Top Divider ($x=6700$ to $8300, y=200$)
-        right_top_div = draw_royal_album_divider(width=1600, height=50, color=(120, 115, 110, 220))
-        canvas.paste(right_top_div, (6700, 200), right_top_div)
+        if right_zone_lum < 0.75:
+            scrim = Image.new("RGBA", (2600, 1400), (0, 0, 0, 0))
+            draw_scrim = ImageDraw.Draw(scrim)
+            scrim_color = (0, 0, 0, 110) if right_zone_lum < 0.45 else (255, 255, 255, 140)
+            draw_scrim.rounded_rectangle([20, 20, 2580, 1380], radius=120, fill=scrim_color)
+            scrim_blurred = scrim.filter(ImageFilter.GaussianBlur(radius=80))
+            canvas.paste(scrim_blurred, (5900, 1600), scrim_blurred)
+            
+        # Left Text Colors
+        if left_zone_lum < 0.45:
+            left_title_col = (255, 255, 255)
+            left_accent_col = (245, 220, 145)
+            left_sec_col = (230, 235, 245)
+            left_halo = (0, 0, 0, 180)
+        else:
+            left_title_col = palette.get("text_primary", (25, 45, 80))
+            left_accent_col = palette.get("accent", (40, 80, 140))
+            left_sec_col = palette.get("text_secondary", (70, 80, 95))
+            left_halo = (255, 255, 255, 180)
+            
+        # Right Text Colors
+        if right_zone_lum < 0.52:
+            right_title_col = (255, 255, 255)
+            right_accent_col = (250, 225, 145)
+            right_sec_col = (240, 243, 250)
+            right_halo = (10, 15, 25, 210)
+            right_filigree = (250, 225, 145, 190)
+        else:
+            right_title_col = (20, 40, 75)
+            right_accent_col = (35, 75, 130)
+            right_sec_col = (50, 65, 85)
+            right_halo = (255, 255, 255, 200)
+            right_filigree = (35, 75, 130, 180)
+            
+        # 5. Render Botanical Floral Flourishes
+        botanical_left = draw_floral_branch(size=(1600, 2000), color=palette.get("filigree_color", (40, 80, 140, 160)), orientation="left")
+        canvas.paste(botanical_left, (0, SPREAD_HEIGHT - 2000), botanical_left)
         
-        # Right Bottom Divider ($x=6700$ to $8300, y=3320$)
-        right_bot_div = draw_royal_album_divider(width=1600, height=50, color=(120, 115, 110, 220))
-        canvas.paste(right_bot_div, (6700, 3320), right_bot_div)
+        botanical_center = draw_floral_branch(size=(1200, 1600), color=right_filigree, orientation="right")
+        canvas.paste(botanical_center, (4900, SPREAD_HEIGHT - 1600), botanical_center)
         
-        # 5. Render Lower-Left Sleek Slate Ribbon Badge
-        ribbon_layer = Image.new("RGBA", (SPREAD_WIDTH, SPREAD_HEIGHT), (0, 0, 0, 0))
-        draw_r = ImageDraw.Draw(ribbon_layer)
+        # 6. Render Luxury Wedding Typography
+        text_layer = Image.new("RGBA", (SPREAD_WIDTH, SPREAD_HEIGHT), (0, 0, 0, 0))
+        draw_txt = ImageDraw.Draw(text_layer)
         
-        rx, ry, rw, rh = 550, 3020, 3100, 180
-        # Translucent elegant slate/steel gray ribbon (as in reference)
-        draw_r.rectangle([rx, ry, rx + rw, ry + rh], fill=(160, 172, 185, 215))
+        # === LEFT TOP HEADER (Centered above left frames at x=1975) ===
+        header_center_x = 1975
         
-        # Draw Spaced All-Caps Serif Text
-        font_badge = get_font("caps_serif", 56)
-        text_badge = spread.ribbon_badge_text or "E X C E L L E N T   M O M E N T S"
-        draw_r.text((rx + rw // 2, ry + rh // 2), text_badge, font=font_badge, fill=(255, 255, 255, 255), anchor="mm")
+        font_script_title = get_font("script", 260)
+        font_serif_title = get_font("caps_serif", 105)
+        font_poem = get_font("body_serif", 64)
         
-        canvas.paste(ribbon_layer, (0, 0), ribbon_layer)
+        bbox_script = draw_txt.textbbox((0, 0), spread.main_title_script, font=font_script_title)
+        script_w = bbox_script[2] - bbox_script[0]
         
-        # 6. Save Full 10800x3600 Resolution (300 DPI)
+        bbox_serif = draw_txt.textbbox((0, 0), spread.main_title_serif, font=font_serif_title)
+        serif_w = bbox_serif[2] - bbox_serif[0]
+        
+        total_title_w = script_w + 35 + serif_w
+        start_x = header_center_x - (total_title_w // 2)
+        
+        draw_text_with_halo(draw_txt, (start_x, 320), spread.main_title_script, font_script_title, tuple(left_title_col), halo_color=left_halo, halo_radius=3)
+        draw_text_with_halo(draw_txt, (start_x + script_w + 35, 435), spread.main_title_serif, font_serif_title, tuple(left_accent_col), halo_color=left_halo, halo_radius=3)
+        
+        small_flourish = draw_floral_branch(size=(220, 220), color=left_accent_col, orientation="right")
+        text_layer.paste(small_flourish, (start_x + total_title_w + 20, 360), small_flourish)
+        
+        lines = spread.subtitle.split("\n")
+        y_text = 630
+        for line in lines:
+            draw_text_with_halo(draw_txt, (header_center_x, y_text), line, font_poem, tuple(left_sec_col), halo_color=left_halo, halo_radius=2, anchor="mm")
+            y_text += 82
+            
+        left_divider = draw_divider_ornament(width=700, height=50, color=gold_color)
+        text_layer.paste(left_divider, (header_center_x - 350, y_text + 10), left_divider)
+        
+        # === CENTER SPINE / GUTTER CREASE (x = 5400) ===
+        center_x = 5400
+        crest = draw_diamond_crest(size=(220, 220), color=left_accent_col)
+        text_layer.paste(crest, (center_x - 110, 480), crest)
+        
+        font_center_caps = get_font("caps_serif", 52)
+        draw_text_with_halo(draw_txt, (center_x, 800), spread.center_label_1, font_center_caps, tuple(left_title_col), halo_color=left_halo, halo_radius=2, anchor="mm")
+        draw_text_with_halo(draw_txt, (center_x, 915), spread.center_label_2, font_center_caps, tuple(left_accent_col), halo_color=left_halo, halo_radius=2, anchor="mm")
+        draw_text_with_halo(draw_txt, (center_x, 1030), spread.center_label_3, font_center_caps, tuple(left_title_col), halo_color=left_halo, halo_radius=2, anchor="mm")
+        
+        draw_text_with_halo(draw_txt, (center_x, 1160), "♡", get_font("body_serif", 60), tuple(left_accent_col), halo_color=left_halo, halo_radius=2, anchor="mm")
+        
+        # === RIGHT PAGE SECTION: "Memories for a lifetime" ===
+        font_memories = get_font("title_serif", 210)
+        font_for_lifetime = get_font("script", 145)
+        font_stanza = get_font("body_serif", 62)
+        
+        mem_x = 6150
+        mem_y = 1750
+        
+        draw_text_with_halo(draw_txt, (mem_x, mem_y), spread.secondary_script, font_memories, tuple(right_title_col), halo_color=right_halo, halo_radius=4)
+        draw_text_with_halo(draw_txt, (mem_x + 60, mem_y + 195), spread.secondary_serif, font_for_lifetime, tuple(right_accent_col), halo_color=right_halo, halo_radius=4)
+        
+        right_divider = draw_divider_ornament(width=750, height=50, color=right_accent_col)
+        text_layer.paste(right_divider, (mem_x, mem_y + 345), right_divider)
+        
+        stanza_lines = spread.secondary_quote.split("\n")
+        sy = mem_y + 445
+        for sline in stanza_lines:
+            draw_text_with_halo(draw_txt, (mem_x, sy), sline, font_stanza, tuple(right_sec_col), halo_color=right_halo, halo_radius=3)
+            sy += 80
+            
+        canvas.paste(text_layer, (0, 0), text_layer)
+        
+        # 7. Save Full 10800x3600 Resolution (300 DPI)
         final_rgb = canvas.convert("RGB")
         high_res_filename = f"spread_{spread.spread_number:03d}_{spread.id[:8]}.jpg"
         high_res_path = EXPORTS_DIR / high_res_filename
@@ -192,7 +289,7 @@ class SpreadRenderer:
             subsampling=0
         )
         
-        # 7. Save Web Preview
+        # 8. Save Web Preview
         preview_rel_url = None
         if save_preview:
             preview_filename = f"preview_spread_{spread.spread_number:03d}_{spread.id[:8]}.webp"
