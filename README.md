@@ -1,3 +1,14 @@
+---
+title: Album Generator
+emoji: 📸
+colorFrom: blue
+colorTo: purple
+sdk: gradio
+sdk_version: "4.41.3"
+app_file: app.py
+pinned: false
+---
+
 # Royal Album Generator (10800 × 3600 @ 300 DPI)
 
 An intelligent, cloud-assisted Wedding Photobook & Album Spread Designer built with a **FastAPI backend** and a **React + Vite Frontend** featuring a **1-click automated upload & auto-download flow**.
