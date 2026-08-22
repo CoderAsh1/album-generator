@@ -1,4 +1,3 @@
-import os
 import sys
 from pathlib import Path
 
@@ -7,24 +6,11 @@ backend_dir = Path(__file__).parent / "backend"
 sys.path.insert(0, str(backend_dir))
 
 import spaces
-import gradio as gr
-from backend.main import app as fastapi_app
+from backend.main import app
 
+# ZeroGPU strictly requires at least one function to be decorated with @spaces.GPU.
+# Since we are exposing a pure FastAPI app, we add a dummy endpoint here.
+@app.get("/api/gpu-ping")
 @spaces.GPU
-def wake_up_gpu():
-    return "GPU is awake!"
-
-# Gradio needs a dummy interface to recognize this as a valid Space
-demo = gr.Blocks()
-with demo:
-    gr.Markdown("# AI Wedding Album Maker API Backend\n\nThis is a headless backend API serving the React frontend. (16GB RAM ZeroGPU Space)")
-    btn = gr.Button("Ping Backend")
-    out = gr.Textbox()
-    btn.click(fn=wake_up_gpu, inputs=[], outputs=[out])
-
-# Mount FastAPI app onto Gradio
-app = gr.mount_gradio_app(fastapi_app, demo, path="/")
-
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=7860)
+def gpu_ping():
+    return {"status": "GPU is awake!"}
