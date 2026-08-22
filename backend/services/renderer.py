@@ -3,7 +3,7 @@ import math
 import numpy as np
 import gc
 from pathlib import Path
-from PIL import Image, ImageDraw, ImageFilter, ImageOps, ImageEnhance
+from PIL import Image, ImageDraw, ImageFilter, ImageOps, ImageEnhance, ImageFont
 from typing import Optional, Dict, Any, Tuple
 from config import (
     SPREAD_WIDTH, SPREAD_HEIGHT, DPI, PREVIEW_WIDTH, PREVIEW_HEIGHT,
