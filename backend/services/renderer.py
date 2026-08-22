@@ -102,7 +102,7 @@ def draw_text_with_halo(
     font: ImageFont.FreeTypeFont,
     fill: Tuple[int, int, int],
     halo_color: Tuple[int, int, int, int] = (0, 0, 0, 160),
-    halo_radius: int = 4,
+    halo_radius: int = 3,
     anchor: Optional[str] = None
 ):
     x, y = pos
@@ -118,7 +118,8 @@ def draw_text_with_halo(
 class SpreadRenderer:
     def render_spread(self, spread: SpreadDesign, save_preview: bool = True) -> Tuple[str, Optional[str]]:
         """
-        Renders spacious, luxury 3-4 photo wedding spreads @ 300 DPI (10800x3600).
+        Renders spacious, luxury 3-4 photo wedding spreads @ 300 DPI (10800x3600)
+        with dynamic non-repeating poetry and clean photo-first spreads.
         """
         palette = spread.dynamic_palette or THEMES["royal_blue_gold"]
         
@@ -130,7 +131,7 @@ class SpreadRenderer:
         # 1. Base Canvas
         canvas = Image.new("RGBA", (SPREAD_WIDTH, SPREAD_HEIGHT), tuple(bg_color) + (255,))
         
-        # 2. Render Background Hero Photo (Strictly 1 Background Photo)
+        # 2. Render Background Hero Photo (Right ~65% with soft feather)
         bg_placements = [p for p in spread.photos if p.role == "background_hero"]
         for p in bg_placements:
             if Path(p.file_path).exists():
@@ -143,7 +144,7 @@ class SpreadRenderer:
                 except Exception as e:
                     print(f"Error rendering background photo: {e}")
                     
-        # 3. Render Inset Framed Photos (Strictly 2 Left + Optional 1 Right)
+        # 3. Render Inset Framed Photos
         framed_placements = [p for p in spread.photos if p.role != "background_hero"]
         for p in framed_placements:
             if Path(p.file_path).exists():
@@ -162,121 +163,72 @@ class SpreadRenderer:
                 except Exception as e:
                     print(f"Error rendering framed photo: {e}")
                     
-        # 4. Background Scrim & Contrast Analysis
-        right_zone_lum = calculate_region_luminance(canvas, 6000, 1650, 2400, 1200)
-        left_zone_lum = calculate_region_luminance(canvas, 400, 250, 3200, 800)
-        
-        if right_zone_lum < 0.75:
-            scrim = Image.new("RGBA", (2600, 1400), (0, 0, 0, 0))
-            draw_scrim = ImageDraw.Draw(scrim)
-            scrim_color = (0, 0, 0, 110) if right_zone_lum < 0.45 else (255, 255, 255, 140)
-            draw_scrim.rounded_rectangle([20, 20, 2580, 1380], radius=120, fill=scrim_color)
-            scrim_blurred = scrim.filter(ImageFilter.GaussianBlur(radius=80))
-            canvas.paste(scrim_blurred, (5900, 1600), scrim_blurred)
-            
-        # Left Text Colors
-        if left_zone_lum < 0.45:
-            left_title_col = (255, 255, 255)
-            left_accent_col = (245, 220, 145)
-            left_sec_col = (230, 235, 245)
-            left_halo = (0, 0, 0, 180)
-        else:
-            left_title_col = palette.get("text_primary", (25, 45, 80))
-            left_accent_col = palette.get("accent", (40, 80, 140))
-            left_sec_col = palette.get("text_secondary", (70, 80, 95))
-            left_halo = (255, 255, 255, 180)
-            
-        # Right Text Colors
-        if right_zone_lum < 0.52:
-            right_title_col = (255, 255, 255)
-            right_accent_col = (250, 225, 145)
-            right_sec_col = (240, 243, 250)
-            right_halo = (10, 15, 25, 210)
-            right_filigree = (250, 225, 145, 190)
-        else:
-            right_title_col = (20, 40, 75)
-            right_accent_col = (35, 75, 130)
-            right_sec_col = (50, 65, 85)
-            right_halo = (255, 255, 255, 200)
-            right_filigree = (35, 75, 130, 180)
-            
-        # 5. Render Botanical Floral Flourishes
+        # 4. Render Botanical Floral Flourishes
         botanical_left = draw_floral_branch(size=(1600, 2000), color=palette.get("filigree_color", (40, 80, 140, 160)), orientation="left")
         canvas.paste(botanical_left, (0, SPREAD_HEIGHT - 2000), botanical_left)
         
-        botanical_center = draw_floral_branch(size=(1200, 1600), color=right_filigree, orientation="right")
-        canvas.paste(botanical_center, (4900, SPREAD_HEIGHT - 1600), botanical_center)
-        
-        # 6. Render Luxury Wedding Typography
-        text_layer = Image.new("RGBA", (SPREAD_WIDTH, SPREAD_HEIGHT), (0, 0, 0, 0))
-        draw_txt = ImageDraw.Draw(text_layer)
-        
-        # === LEFT TOP HEADER (Centered above left frames at x=1975) ===
-        header_center_x = 1975
-        
-        font_script_title = get_font("script", 260)
-        font_serif_title = get_font("caps_serif", 105)
-        font_poem = get_font("body_serif", 64)
-        
-        bbox_script = draw_txt.textbbox((0, 0), spread.main_title_script, font=font_script_title)
-        script_w = bbox_script[2] - bbox_script[0]
-        
-        bbox_serif = draw_txt.textbbox((0, 0), spread.main_title_serif, font=font_serif_title)
-        serif_w = bbox_serif[2] - bbox_serif[0]
-        
-        total_title_w = script_w + 35 + serif_w
-        start_x = header_center_x - (total_title_w // 2)
-        
-        draw_text_with_halo(draw_txt, (start_x, 320), spread.main_title_script, font_script_title, tuple(left_title_col), halo_color=left_halo, halo_radius=3)
-        draw_text_with_halo(draw_txt, (start_x + script_w + 35, 435), spread.main_title_serif, font_serif_title, tuple(left_accent_col), halo_color=left_halo, halo_radius=3)
-        
-        small_flourish = draw_floral_branch(size=(220, 220), color=left_accent_col, orientation="right")
-        text_layer.paste(small_flourish, (start_x + total_title_w + 20, 360), small_flourish)
-        
-        lines = spread.subtitle.split("\n")
-        y_text = 630
-        for line in lines:
-            draw_text_with_halo(draw_txt, (header_center_x, y_text), line, font_poem, tuple(left_sec_col), halo_color=left_halo, halo_radius=2, anchor="mm")
-            y_text += 82
+        # 5. Render Typography (Only on Text/Opener Spreads)
+        if spread.has_header_text:
+            text_layer = Image.new("RGBA", (SPREAD_WIDTH, SPREAD_HEIGHT), (0, 0, 0, 0))
+            draw_txt = ImageDraw.Draw(text_layer)
             
-        left_divider = draw_divider_ornament(width=700, height=50, color=gold_color)
-        text_layer.paste(left_divider, (header_center_x - 350, y_text + 10), left_divider)
-        
-        # === CENTER SPINE / GUTTER CREASE (x = 5400) ===
-        center_x = 5400
-        crest = draw_diamond_crest(size=(220, 220), color=left_accent_col)
-        text_layer.paste(crest, (center_x - 110, 480), crest)
-        
-        font_center_caps = get_font("caps_serif", 52)
-        draw_text_with_halo(draw_txt, (center_x, 800), spread.center_label_1, font_center_caps, tuple(left_title_col), halo_color=left_halo, halo_radius=2, anchor="mm")
-        draw_text_with_halo(draw_txt, (center_x, 915), spread.center_label_2, font_center_caps, tuple(left_accent_col), halo_color=left_halo, halo_radius=2, anchor="mm")
-        draw_text_with_halo(draw_txt, (center_x, 1030), spread.center_label_3, font_center_caps, tuple(left_title_col), halo_color=left_halo, halo_radius=2, anchor="mm")
-        
-        draw_text_with_halo(draw_txt, (center_x, 1160), "♡", get_font("body_serif", 60), tuple(left_accent_col), halo_color=left_halo, halo_radius=2, anchor="mm")
-        
-        # === RIGHT PAGE SECTION: "Memories for a lifetime" ===
-        font_memories = get_font("title_serif", 210)
-        font_for_lifetime = get_font("script", 145)
-        font_stanza = get_font("body_serif", 62)
-        
-        mem_x = 6150
-        mem_y = 1750
-        
-        draw_text_with_halo(draw_txt, (mem_x, mem_y), spread.secondary_script, font_memories, tuple(right_title_col), halo_color=right_halo, halo_radius=4)
-        draw_text_with_halo(draw_txt, (mem_x + 60, mem_y + 195), spread.secondary_serif, font_for_lifetime, tuple(right_accent_col), halo_color=right_halo, halo_radius=4)
-        
-        right_divider = draw_divider_ornament(width=750, height=50, color=right_accent_col)
-        text_layer.paste(right_divider, (mem_x, mem_y + 345), right_divider)
-        
-        stanza_lines = spread.secondary_quote.split("\n")
-        sy = mem_y + 445
-        for sline in stanza_lines:
-            draw_text_with_halo(draw_txt, (mem_x, sy), sline, font_stanza, tuple(right_sec_col), halo_color=right_halo, halo_radius=3)
-            sy += 80
+            left_zone_lum = calculate_region_luminance(canvas, 400, 250, 3200, 800)
+            if left_zone_lum < 0.45:
+                left_title_col = (255, 255, 255)
+                left_accent_col = (245, 220, 145)
+                left_sec_col = (230, 235, 245)
+                left_halo = (0, 0, 0, 180)
+            else:
+                left_title_col = palette.get("text_primary", (25, 45, 80))
+                left_accent_col = palette.get("accent", (40, 80, 140))
+                left_sec_col = palette.get("text_secondary", (70, 80, 95))
+                left_halo = (255, 255, 255, 180)
+                
+            header_center_x = 1975
             
-        canvas.paste(text_layer, (0, 0), text_layer)
-        
-        # 7. Save Full 10800x3600 Resolution (300 DPI)
+            font_script_title = get_font("script", 260)
+            font_serif_title = get_font("caps_serif", 105)
+            font_poem = get_font("body_serif", 64)
+            
+            bbox_script = draw_txt.textbbox((0, 0), spread.main_title_script, font=font_script_title)
+            script_w = bbox_script[2] - bbox_script[0]
+            
+            bbox_serif = draw_txt.textbbox((0, 0), spread.main_title_serif, font=font_serif_title)
+            serif_w = bbox_serif[2] - bbox_serif[0]
+            
+            total_title_w = script_w + 35 + serif_w
+            start_x = header_center_x - (total_title_w // 2)
+            
+            draw_text_with_halo(draw_txt, (start_x, 320), spread.main_title_script, font_script_title, tuple(left_title_col), halo_color=left_halo, halo_radius=3)
+            draw_text_with_halo(draw_txt, (start_x + script_w + 35, 435), spread.main_title_serif, font_serif_title, tuple(left_accent_col), halo_color=left_halo, halo_radius=3)
+            
+            small_flourish = draw_floral_branch(size=(220, 220), color=left_accent_col, orientation="right")
+            text_layer.paste(small_flourish, (start_x + total_title_w + 20, 360), small_flourish)
+            
+            lines = spread.subtitle.split("\n")
+            y_text = 630
+            for line in lines:
+                draw_text_with_halo(draw_txt, (header_center_x, y_text), line, font_poem, tuple(left_sec_col), halo_color=left_halo, halo_radius=2, anchor="mm")
+                y_text += 82
+                
+            left_divider = draw_divider_ornament(width=700, height=50, color=gold_color)
+            text_layer.paste(left_divider, (header_center_x - 350, y_text + 10), left_divider)
+            
+            # Center Spine Crest ($x = 5400$)
+            if spread.has_spine_crest:
+                center_x = 5400
+                crest = draw_diamond_crest(size=(220, 220), color=left_accent_col)
+                text_layer.paste(crest, (center_x - 110, 480), crest)
+                
+                font_center_caps = get_font("caps_serif", 52)
+                draw_text_with_halo(draw_txt, (center_x, 800), spread.center_label_1, font_center_caps, tuple(left_title_col), halo_color=left_halo, halo_radius=2, anchor="mm")
+                draw_text_with_halo(draw_txt, (center_x, 915), spread.center_label_2, font_center_caps, tuple(left_accent_col), halo_color=left_halo, halo_radius=2, anchor="mm")
+                draw_text_with_halo(draw_txt, (center_x, 1030), spread.center_label_3, font_center_caps, tuple(left_title_col), halo_color=left_halo, halo_radius=2, anchor="mm")
+                draw_text_with_halo(draw_txt, (center_x, 1160), "♡", get_font("body_serif", 60), tuple(left_accent_col), halo_color=left_halo, halo_radius=2, anchor="mm")
+                
+            canvas.paste(text_layer, (0, 0), text_layer)
+            
+        # 6. Save Full 10800x3600 Resolution (300 DPI)
         final_rgb = canvas.convert("RGB")
         high_res_filename = f"spread_{spread.spread_number:03d}_{spread.id[:8]}.jpg"
         high_res_path = EXPORTS_DIR / high_res_filename
@@ -289,7 +241,7 @@ class SpreadRenderer:
             subsampling=0
         )
         
-        # 8. Save Web Preview
+        # 7. Save Web Preview
         preview_rel_url = None
         if save_preview:
             preview_filename = f"preview_spread_{spread.spread_number:03d}_{spread.id[:8]}.webp"
