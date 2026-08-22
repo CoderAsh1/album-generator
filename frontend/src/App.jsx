@@ -22,6 +22,8 @@ export default function App() {
   const [spreadPreviews, setSpreadPreviews] = useState([])
   const [errorMessage, setErrorMessage] = useState('')
 
+  const API_BASE = import.meta.env.VITE_API_URL || ''
+
   // Single AI Prompt input - everything can be specified in natural language or left empty
   const [customPrompt, setCustomPrompt] = useState('')
 
@@ -44,7 +46,7 @@ export default function App() {
 
     try {
       // Step 1: Upload photos
-      const uploadRes = await fetch('/api/upload', {
+      const uploadRes = await fetch(`${API_BASE}/api/upload`, {
         method: 'POST',
         body: formData,
       })
@@ -62,7 +64,7 @@ export default function App() {
         prompt: customPrompt.trim() ? customPrompt.trim() : null
       }
       
-      const genRes = await fetch('/api/generate-album', {
+      const genRes = await fetch(`${API_BASE}/api/generate-album`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
@@ -81,7 +83,7 @@ export default function App() {
       setStage('generating_pdf')
       setProgressText(`Compiling ${spreads.length} spreads into print-ready 300 DPI PDF...`)
 
-      const pdfRes = await fetch('/api/export-pdf', {
+      const pdfRes = await fetch(`${API_BASE}/api/export-pdf`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ album_title: "Wedding Photobook (10800x3600 300DPI)" })
@@ -92,12 +94,13 @@ export default function App() {
       // Step 4: Auto-download PDF
       setStage('completed')
       setProgressText('300 DPI Print PDF generated! Downloading now...')
-      setPdfDownloadUrl(pdfData.download_url)
+      const fullDownloadUrl = pdfData.download_url.startsWith('/') ? API_BASE + pdfData.download_url : pdfData.download_url
+      setPdfDownloadUrl(fullDownloadUrl)
       setPdfFilename(pdfData.pdf_filename)
 
       // Trigger automatic browser download
       const downloadLink = document.createElement('a')
-      downloadLink.href = pdfData.download_url
+      downloadLink.href = fullDownloadUrl
       downloadLink.download = pdfData.pdf_filename || 'wedding_album_300dpi.pdf'
       document.body.appendChild(downloadLink)
       downloadLink.click()
@@ -282,7 +285,7 @@ export default function App() {
                   <div className="grid grid-cols-2 gap-3">
                     {spreadPreviews.map((url, i) => (
                       <div key={i} className="aspect-[3/1] rounded-lg overflow-hidden border border-slate-800 bg-slate-950 shadow-md">
-                        <img src={url} alt={`Spread ${i+1}`} className="w-full h-full object-cover" />
+                        <img src={url.startsWith('/') ? API_BASE + url : url} alt={`Spread ${i+1}`} className="w-full h-full object-cover" />
                       </div>
                     ))}
                   </div>
