@@ -39,6 +39,9 @@ class PDFGenerator:
             )
             c.showPage()
             
+            import gc
+            gc.collect()
+            
         c.save()
         return str(pdf_path)
 

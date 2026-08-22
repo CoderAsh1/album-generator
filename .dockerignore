@@ -1,0 +1,12 @@
+.venv/
+venv/
+node_modules/
+frontend/
+.git/
+.gitignore
+backend/storage/uploads/*
+backend/storage/exports/*
+backend/storage/previews/*
+backend/data/*
+__pycache__/
+*.pyc

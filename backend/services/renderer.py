@@ -1,6 +1,7 @@
 import os
 import math
 import numpy as np
+import gc
 from pathlib import Path
 from PIL import Image, ImageDraw, ImageFilter, ImageOps, ImageEnhance
 from typing import Optional, Dict, Any, Tuple
@@ -250,6 +251,10 @@ class SpreadRenderer:
                 
             canvas.paste(text_layer, (0, 0), text_layer)
             
+            # Free text layer memory immediately
+            del text_layer
+            gc.collect()
+            
         # 6. Save Full 10800x3600 Resolution (300 DPI)
         final_rgb = canvas.convert("RGB")
         high_res_filename = f"spread_{spread.spread_number:03d}_{spread.id[:8]}.jpg"
@@ -263,6 +268,10 @@ class SpreadRenderer:
             subsampling=0
         )
         
+        # Free heavy RGBA canvas immediately
+        del canvas
+        gc.collect()
+        
         # 7. Save Web Preview
         preview_rel_url = None
         if save_preview:
@@ -275,6 +284,10 @@ class SpreadRenderer:
             
         spread.high_res_url = f"/static/exports/{high_res_filename}"
         spread.preview_url = preview_rel_url
+        
+        # Free final RGB and run full sweep before next spread
+        del final_rgb
+        gc.collect()
         
         return str(high_res_path), str(PREVIEWS_DIR / f"preview_spread_{spread.spread_number:03d}_{spread.id[:8]}.webp") if save_preview else None
 
